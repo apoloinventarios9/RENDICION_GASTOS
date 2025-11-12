@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Sistema de Rendición de Gastos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
+  <style>
+    .suggest-list { 
+      position: absolute; 
+      background: white; 
+      border: 1px solid #e5e7eb; 
+      border-radius: 0.5rem;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+      z-index: 10; 
+      max-height: 180px; 
+      overflow-y: auto; 
+      width: 100%; 
+    }
+    .suggest-list div { 
+      padding: 8px 12px; 
+      cursor: pointer; 
+      transition: all 0.2s;
+    }
+    .suggest-list div:hover { 
+      background: #3b82f6; 
+      color: white;
+    }
+    
+    /* Animación del menú hamburguesa */
+    .hamburger-line {
+      transition: all 0.3s ease-in-out;
+    }
+    
+    #sidebar {
+      transition: transform 0.3s ease-in-out;
+    }
+    
+    /* Estilos para scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #94a3b8;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+
+    /* Animaciones */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-slide-in {
+      animation: slideIn 0.3s ease-out;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 min-h-screen">
+  
+  <!-- Menú Hamburguesa (Mobile) -->
+  <button id="menuToggle" class="fixed top-4 left-4 z-50 lg:hidden bg-white p-3 rounded-lg shadow-lg hover:bg-gray-100 transition">
+    <svg class="w-6 h-6 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path class="hamburger-line" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+    </svg>
+  </button>
+
+  <!-- Sidebar / Menú Lateral -->
+  <aside id="sidebar" class="fixed top-0 left-0 h-full w-64 bg-white shadow-2xl z-40 transform -translate-x-full lg:translate-x-0 overflow-y-auto">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-lg font-bold text-gray-800">📊 Menú</h2>
+        <button id="closeSidebar" class="lg:hidden text-gray-600 hover:text-gray-900">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+      
+      <!-- Navegación -->
+      <nav class="space-y-2">
+        <button onclick="showSection('nuevo')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 transition flex items-center gap-2.5">
+          <span class="text-xl">➕</span>
+          <span class="text-sm font-medium text-gray-700">Nuevo Registro</span>
+        </button>
+        <button onclick="showSection('historial')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 transition flex items-center gap-2.5">
+          <span class="text-xl">📋</span>
+          <span class="text-sm font-medium text-gray-700">Historial</span>
+        </button>
+        <button onclick="showSection('proveedores')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg hover:bg-blue-50 transition flex items-center gap-2.5">
+          <span class="text-xl">👥</span>
+          <span class="text-sm font-medium text-gray-700">Proveedores</span>
+        </button>
+      </nav>
+
+      <!-- Estadísticas rápidas -->
+      <div class="mt-6 p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl text-white">
+        <p class="text-xs opacity-90">Proveedores registrados</p>
+        <p class="text-2xl font-bold" id="totalProveedores">0</p>
+      </div>
+      
+      <div class="mt-3 p-3 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl text-white">
+        <p class="text-xs opacity-90">Registros guardados</p>
+        <p class="text-2xl font-bold" id="totalRegistros">0</p>
+      </div>
+      
+      <div id="storageInfo" class="mt-3 p-3 bg-gray-100 rounded-xl text-gray-700">
+        <p class="text-xs opacity-90">💾 Almacenamiento</p>
+        <p class="text-lg font-bold">0 MB</p>
+        <p class="text-xs opacity-90">0% usado</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Contenido Principal -->
+  <main class="lg:ml-64 min-h-screen p-4 lg:p-6">
+    
+    <!-- Sección: Nuevo Registro -->
+    <section id="section-nuevo" class="content-section">
+      <div class="bg-white shadow-2xl rounded-2xl p-5 lg:p-6 max-w-6xl mx-auto animate-slide-in">
+        <div class="flex items-center gap-2.5 mb-5">
+          <span class="text-3xl">📝</span>
+          <h1 class="text-2xl font-bold text-gray-800">Rendición de Gastos</h1>
+        </div>
+
+        <!-- 2. Selección de Mes y Año -->
+        <div class="mb-5 p-4 bg-gray-50 rounded-xl">
+          <label class="block font-semibold mb-2.5 text-gray-700 flex items-center gap-2 text-sm">
+            <span class="text-lg">📅</span>
+            Periodo de Liquidación
+          </label>
+          <div class="flex gap-3 items-center flex-wrap">
+            <select id="selectMes" class="border-2 border-gray-300 rounded-lg p-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition">
+              <!-- Opciones se llenan en JS -->
+            </select>
+            <select id="selectAnio" class="border-2 border-gray-300 rounded-lg p-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition">
+              <!-- Opciones se llenan en JS -->
+            </select>
+          </div>
+        </div>
+
+        <!-- 3. Tabla de Registro -->
+        <form id="registerForm" autocomplete="off">
+          <div class="overflow-x-auto rounded-lg border border-gray-200">
+            <table class="w-full text-sm mb-4">
+              <thead>
+                <tr class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">FECHA</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">TIPO DOC.</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">SERIE Y NRO</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">PROVEEDOR</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">CONCEPTO</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">DÓLARES</th>
+                  <th class="py-2.5 px-2.5 text-left font-semibold text-xs">SOLES</th>
+                  <th class="py-2.5 px-2.5 text-center font-semibold text-xs">ACCIÓN</th>
+                </tr>
+              </thead>
+              <tbody id="rowsContainer">
+                <!-- Filas generadas por JS -->
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="flex gap-3 mt-5 flex-wrap">
+            <button type="submit" class="flex-1 min-w-[200px] py-2.5 px-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition shadow-lg hover:shadow-xl flex items-center justify-center gap-2 text-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+              </svg>
+              Guardar Registro
+            </button>
+            <button type="button" id="btnExportExcel" class="flex-1 min-w-[200px] py-2.5 px-5 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-700 transition shadow-lg hover:shadow-xl flex items-center justify-center gap-2 text-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+              </svg>
+              Exportar a Excel
+            </button>
+          </div>
+        </form>
+
+        <div id="msgBox" class="mt-3 text-center font-semibold text-sm"></div>
+      </div>
+    </section>
+
+    <!-- Sección: Historial de Registros -->
+    <section id="section-historial" class="content-section hidden">
+      <div class="bg-white shadow-2xl rounded-2xl p-5 lg:p-6 max-w-6xl mx-auto animate-slide-in">
+        <div class="flex items-center gap-2.5 mb-5 justify-between flex-wrap">
+          <div class="flex items-center gap-2.5">
+            <span class="text-3xl">📋</span>
+            <h1 class="text-2xl font-bold text-gray-800">Historial de Liquidaciones</h1>
+          </div>
+          <button onclick="mostrarGestionAlmacenamiento()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-semibold flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path>
+            </svg>
+            Gestionar Almacenamiento
+          </button>
+        </div>
+
+        <div class="mb-4 p-2.5 bg-blue-50 border-l-4 border-blue-500 rounded text-xs text-blue-700">
+          <strong>💡 Tip:</strong> Puedes editar cualquier registro guardado haciendo clic en "Editar". Los cambios se guardarán y podrás volver a descargar el Excel actualizado.
+        </div>
+
+        <div id="historialContainer" class="space-y-4">
+          <!-- Se llena dinámicamente -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección: Gestión de Proveedores -->
+    <section id="section-proveedores" class="content-section hidden">
+      <div class="bg-white shadow-2xl rounded-2xl p-5 lg:p-6 max-w-6xl mx-auto animate-slide-in">
+        <div class="flex items-center gap-2.5 mb-5">
+          <span class="text-3xl">👥</span>
+          <h1 class="text-2xl font-bold text-gray-800">Gestión de Proveedores</h1>
+        </div>
+
+        <!-- Carga de Proveedores -->
+        <div class="mb-5 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
+          <label class="block font-semibold mb-2.5 text-gray-700 flex items-center gap-2 text-sm">
+            <span class="text-lg">📁</span>
+            Cargar Proveedores desde archivo
+          </label>
+          <div class="flex gap-3 flex-wrap">
+            <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="flex-1 min-w-[200px] border-2 border-gray-300 p-2 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" />
+            <button id="btnAddProvider" class="px-5 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-700 transition shadow-lg flex items-center gap-2 text-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+              </svg>
+              Agregar Manualmente
+            </button>
+          </div>
+          <div id="providerUploadMsg" class="text-xs font-medium mt-2.5"></div>
+        </div>
+
+        <!-- Lista de Proveedores -->
+        <div class="mt-5">
+          <h3 class="text-lg font-bold text-gray-700 mb-3 flex items-center gap-2">
+            <span>📊</span>
+            Proveedores Registrados (<span id="proveedorCount">0</span>)
+          </h3>
+          <div class="mb-3">
+            <input type="text" id="searchProveedor" placeholder="🔍 Buscar proveedor por RUC o razón social..." class="w-full border-2 border-gray-300 rounded-lg p-2.5 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition">
+          </div>
+          <div class="mb-3 p-2.5 bg-blue-50 border-l-4 border-blue-500 rounded text-xs text-blue-700">
+            <strong>💡 Tip:</strong> Puedes editar la razón social de un proveedor. Los cambios se aplicarán en todos los registros donde esté siendo usado.
+          </div>
+          <div id="proveedoresList" class="space-y-2 max-h-96 overflow-y-auto">
+            <!-- Se llena dinámicamente -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  </main>
+
+  <!-- Modal para agregar proveedor manualmente -->
+  <div id="modalProvider" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md animate-slide-in">
+      <div class="flex items-center gap-2.5 mb-5">
+        <span class="text-2xl">➕</span>
+        <h3 class="text-xl font-bold text-gray-800">Nuevo Proveedor</h3>
+      </div>
+      
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1.5">RUC (11 dígitos)</label>
+          <input id="inputRUC" type="text" maxlength="11" placeholder="Ej: 20123456789" class="border-2 border-gray-300 p-2.5 rounded-lg w-full text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" />
+        </div>
+        
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1.5">Razón Social</label>
+          <input id="inputRazon" type="text" placeholder="Nombre o razón social del proveedor" class="border-2 border-gray-300 p-2.5 rounded-lg w-full text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" />
+        </div>
+      </div>
+      
+      <div id="providerErr" class="text-red-600 mt-2.5 text-xs font-medium"></div>
+      
+      <div class="flex gap-2.5 justify-end mt-5">
+        <button onclick="closeModal()" class="px-5 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition text-sm">
+          Cancelar
+        </button>
+        <button onclick="addProvider()" class="px-5 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-emerald-700 transition shadow-lg text-sm">
+          Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal para editar proveedor -->
+  <div id="modalEditProvider" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md animate-slide-in">
+      <div class="flex items-center gap-2.5 mb-5">
+        <span class="text-2xl">✏️</span>
+        <h3 class="text-xl font-bold text-gray-800">Editar Proveedor</h3>
+      </div>
+      
+      <div class="space-y-3.5">
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1.5">RUC (11 dígitos)</label>
+          <input id="editRUC" type="text" maxlength="11" readonly class="border-2 border-gray-300 bg-gray-100 p-2.5 rounded-lg w-full text-sm cursor-not-allowed" />
+          <p class="text-[10px] text-gray-500 mt-1">El RUC no se puede modificar</p>
+        </div>
+        
+        <div>
+          <label class="block text-xs font-medium text-gray-700 mb-1.5">Razón Social</label>
+          <input id="editRazon" type="text" placeholder="Nombre o razón social del proveedor" class="border-2 border-gray-300 p-2.5 rounded-lg w-full text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" />
+        </div>
+      </div>
+      
+      <div id="editProviderErr" class="text-red-600 mt-2.5 text-xs font-medium"></div>
+      
+      <div class="flex gap-2.5 justify-end mt-5">
+        <button onclick="closeEditModal()" class="px-5 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition text-sm">
+          Cancelar
+        </button>
+        <button onclick="updateProvider()" class="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transition shadow-lg text-sm">
+          Actualizar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Gestión de Almacenamiento -->
+  <div id="modalStorage" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-lg animate-slide-in">
+      <div class="flex items-center gap-2.5 mb-5">
+        <span class="text-2xl">💾</span>
+        <h3 class="text-xl font-bold text-gray-800">Gestión de Almacenamiento</h3>
+      </div>
+      
+      <div id="storageDetails" class="space-y-3 mb-5">
+        <!-- Se llena dinámicamente -->
+      </div>
+      
+      <div class="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded text-sm text-yellow-800 mb-4">
+        <strong>⚠️ Advertencia:</strong> Antes de eliminar registros, asegúrate de exportarlos a Excel para no perder la información.
+      </div>
+      
+      <div class="flex gap-2.5 justify-end">
+        <button onclick="closeStorageModal()" class="px-5 py-2 bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition text-sm">
+          Cerrar
+        </button>
+        <button onclick="eliminarRegistrosAntiguos()" class="px-5 py-2 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition text-sm">
+          Eliminar Registros Más Antiguos
+        </button>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+  <script>
+    // ========================================
+    // CONFIGURACIÓN Y ESTADO DE LA APLICACIÓN
+    // ========================================
+    const APP_CONFIG = {
+      STORAGE_KEYS: {
+        PROVEEDORES: 'rendicion_proveedores',
+        REGISTROS: 'rendicion_registros'
+      },
+      TIPOS_DOCUMENTO: ["FACTURA", "BOLETA", "RECIBO POR HONORARIOS", "SIN DOCUMENTO"],
+      NUM_FILAS_INICIAL: 10
+    };
+
+    let proveedores = [];
+    let registros = [];
+    let registrosGuardados = [];
+    let currentSection = 'nuevo';
+    let registroEnEdicion = null; // Para rastrear si estamos editando un registro guardado
+
+    // ========================================
+    // UTILIDADES Y HELPERS
+    // ========================================
+    // Configurar localForage para usar IndexedDB
+    localforage.config({
+      driver: localforage.INDEXEDDB,
+      name: 'RendicionGastos',
+      version: 1.0,
+      storeName: 'rendicion_data',
+      description: 'Sistema de Rendición de Gastos - IndexedDB Storage'
+    });
+
+    const Storage = {
+      save: async (key, data) => {
+        try {
+          const jsonString = JSON.stringify(data);
+          const compressed = LZString.compressToUTF16(jsonString);
+          
+          await localforage.setItem(key, compressed);
+          
+          // Log para ver la reducción de tamaño
+          const originalSize = (jsonString.length / 1024).toFixed(2);
+          const compressedSize = (compressed.length / 1024).toFixed(2);
+          const reduction = (((jsonString.length - compressed.length) / jsonString.length) * 100).toFixed(1);
+          console.log(`💾 Guardado en IndexedDB con compresión: ${originalSize} KB → ${compressedSize} KB (${reduction}% reducción)`);
+          
+          return true;
+        } catch (e) {
+          console.error('Error al guardar en IndexedDB:', e);
+          return false;
+        }
+      },
+      load: async (key) => {
+        try {
+          const compressed = await localforage.getItem(key);
+          if (!compressed) {
+            // Intentar migrar desde localStorage si existe
+            const oldData = localStorage.getItem(key);
+            if (oldData) {
+              console.log(`🔄 Migrando "${key}" desde localStorage a IndexedDB...`);
+              try {
+                const decompressed = LZString.decompressFromUTF16(oldData);
+                const data = decompressed ? JSON.parse(decompressed) : JSON.parse(oldData);
+                await Storage.save(key, data);
+                localStorage.removeItem(key); // Limpiar localStorage
+                console.log(`✅ "${key}" migrado exitosamente`);
+                return data;
+              } catch (e) {
+                console.error('Error al migrar desde localStorage:', e);
+              }
+            }
+            return null;
+          }
+          
+          // Descomprimir y parsear
+          try {
+            const decompressed = LZString.decompressFromUTF16(compressed);
+            return decompressed ? JSON.parse(decompressed) : null;
+          } catch (decompressError) {
+            // Si falla la descompresión, intentar como JSON directo
+            console.log('⚠️ Detectados datos sin comprimir en IndexedDB...');
+            try {
+              return JSON.parse(compressed);
+            } catch (parseError) {
+              console.error('Error al parsear datos:', parseError);
+              return null;
+            }
+          }
+        } catch (e) {
+          console.error('Error al cargar desde IndexedDB:', e);
+          return null;
+        }
+      },
+      clear: async (key) => {
+        try {
+          await localforage.removeItem(key);
+        } catch (e) {
+          console.error('Error al limpiar:', e);
+        }
+      }
+    };
+
+    const Utils = {
+      formatDate: (dia, mes, anio) => {
+        return `${dia.toString().padStart(2, '0')}/${mes.toString().padStart(2, '0')}/${anio}`;
+      },
+      normalizeText: (text) => {
+        return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      },
+      isValidRUC: (ruc) => {
+        return /^\d{11}$/.test(ruc);
+      },
+      generateId: () => {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+      },
+      generateDocNumber: () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = (now.getMonth() + 1).toString().padStart(2, '0');
+        const day = now.getDate().toString().padStart(2, '0');
+        const random = Math.floor(Math.random() * 99999).toString().padStart(5, '0');
+        return `DOC-${year}${month}${day}-${random}`;
+      },
+      getLocalStorageSize: () => {
+        let total = 0;
+        for (let key in localStorage) {
+          if (localStorage.hasOwnProperty(key)) {
+            total += localStorage[key].length + key.length;
+          }
+        }
+        return total;
+      },
+      getStorageStats: async () => {
+        // Usar la API de Storage Estimate para obtener cuota real
+        let quota = 50 * 1024 * 1024; // Fallback: 50 MB
+        let usage = 0;
+        
+        try {
+          if (navigator.storage && navigator.storage.estimate) {
+            const estimate = await navigator.storage.estimate();
+            quota = estimate.quota || quota;
+            usage = estimate.usage || 0;
+            console.log(`📊 Cuota real: ${(quota / (1024 * 1024)).toFixed(2)} MB, Usado: ${(usage / (1024 * 1024)).toFixed(2)} MB`);
+          }
+        } catch (e) {
+          console.error('Error al obtener cuota de almacenamiento:', e);
+        }
+        
+        const usedMB = (usage / (1024 * 1024)).toFixed(2);
+        const quotaMB = (quota / (1024 * 1024)).toFixed(0);
+        const percentUsed = ((usage / quota) * 100).toFixed(1);
+        
+        // Calcular tamaño descomprimido para referencia
+        let uncompressedTotal = 0;
+        try {
+          const registrosData = registrosGuardados;
+          const proveedoresData = proveedores;
+          
+          if (registrosData) {
+            uncompressedTotal += JSON.stringify(registrosData).length;
+          }
+          if (proveedoresData) {
+            uncompressedTotal += JSON.stringify(proveedoresData).length;
+          }
+        } catch (e) {
+          console.error('Error calculando tamaño descomprimido:', e);
+        }
+        
+        const uncompressedMB = (uncompressedTotal / (1024 * 1024)).toFixed(2);
+        const compressionRatio = uncompressedTotal > 0 && usage > 0 ? (((uncompressedTotal - usage) / uncompressedTotal) * 100).toFixed(1) : '0';
+        
+        return { 
+          totalBytes: usage,
+          totalKB: (usage / 1024).toFixed(2), 
+          totalMB: usedMB, 
+          quotaMB,
+          percentUsed, 
+          uncompressedMB, 
+          compressionRatio 
+        };
+      }
+    };
+
+    // ========================================
+    // GESTIÓN DE INTERFAZ
+    // ========================================
+    const UI = {
+      showMessage: (msg, type = 'success') => {
+        const box = document.getElementById('msgBox');
+        box.textContent = msg;
+        const colors = {
+          success: 'text-green-600',
+          error: 'text-red-600',
+          info: 'text-blue-600'
+        };
+        box.className = `mt-4 text-center font-bold ${colors[type] || colors.info}`;
+        setTimeout(() => box.textContent = '', 3000);
+      },
+      
+      showSuccessNotification: (msg, docNumber = null) => {
+        const box = document.getElementById('msgBox');
+        if (docNumber) {
+          box.innerHTML = `
+            <div class="bg-green-100 border-2 border-green-500 rounded-xl p-4 shadow-lg">
+              <div class="flex items-center justify-center gap-2 text-green-800 font-bold mb-2">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>${msg}</span>
+              </div>
+              <div class="text-sm text-green-700">
+                Nº de documento: <strong>${docNumber}</strong>
+              </div>
+            </div>
+          `;
+        } else {
+          box.innerHTML = `
+            <div class="bg-green-100 border-2 border-green-500 rounded-xl p-4 shadow-lg">
+              <div class="flex items-center justify-center gap-2 text-green-800 font-bold">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>${msg}</span>
+              </div>
+            </div>
+          `;
+        }
+        setTimeout(() => box.innerHTML = '', 3000);
+      },
+      
+      updateStats: async () => {
+        document.getElementById('totalProveedores').textContent = proveedores.length;
+        document.getElementById('totalRegistros').textContent = registrosGuardados.length;
+        document.getElementById('proveedorCount').textContent = proveedores.length;
+        
+        // Mostrar estadísticas de almacenamiento
+        const stats = await Utils.getStorageStats();
+        const storageInfo = document.getElementById('storageInfo');
+        if (storageInfo) {
+          let color = 'text-green-700';
+          let bgColor = 'bg-green-100';
+          let icon = '💾';
+          
+          if (parseFloat(stats.percentUsed) > 90) {
+            color = 'text-red-700';
+            bgColor = 'bg-red-100';
+            icon = '⚠️';
+          } else if (parseFloat(stats.percentUsed) > 70) {
+            color = 'text-orange-700';
+            bgColor = 'bg-orange-100';
+            icon = '⚠️';
+          }
+          
+          storageInfo.innerHTML = `
+            <p class="text-xs opacity-90">${icon} IndexedDB</p>
+            <p class="text-lg font-bold">${stats.totalMB} MB</p>
+            <p class="text-xs opacity-90">${stats.percentUsed}% de ${stats.quotaMB} MB</p>
+            ${stats.compressionRatio > 0 ? `<p class="text-[10px] opacity-75 mt-1">🗜️ ${stats.compressionRatio}% comprimido</p>` : ''}
+          `;
+          storageInfo.className = `mt-3 p-3 ${bgColor} rounded-xl ${color}`;
+        }
+      },
+
+      showSection: (section) => {
+        document.querySelectorAll('.content-section').forEach(s => s.classList.add('hidden'));
+        document.getElementById(`section-${section}`).classList.remove('hidden');
+        currentSection = section;
+        
+        // Cerrar sidebar en móvil
+        if (window.innerWidth < 1024) {
+          document.getElementById('sidebar').classList.remove('translate-x-0');
+          document.getElementById('sidebar').classList.add('-translate-x-full');
+        }
+
+        // Actualizar contenido según sección
+        if (section === 'historial') {
+          renderHistorial();
+        } else if (section === 'proveedores') {
+          renderProveedoresList();
+        }
+      }
+    };
+
+    // ========================================
+    // GESTIÓN DE MENÚ HAMBURGUESA
+    // ========================================
+    document.getElementById('menuToggle').addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      sidebar.classList.toggle('-translate-x-full');
+      sidebar.classList.toggle('translate-x-0');
+    });
+
+    document.getElementById('closeSidebar').addEventListener('click', () => {
+      document.getElementById('sidebar').classList.add('-translate-x-full');
+      document.getElementById('sidebar').classList.remove('translate-x-0');
+    });
+
+    // Función global para mostrar secciones
+    window.showSection = (section) => UI.showSection(section);
+
+    // ========================================
+    // GESTIÓN DE PROVEEDORES
+    // ========================================
+    const ProveedoresManager = {
+      cargar: async () => {
+        const data = await Storage.load(APP_CONFIG.STORAGE_KEYS.PROVEEDORES);
+        proveedores = data || [];
+        UI.updateStats();
+      },
+
+      guardar: async () => {
+        await Storage.save(APP_CONFIG.STORAGE_KEYS.PROVEEDORES, proveedores);
+        UI.updateStats();
+      },
+
+      agregar: async (ruc, razon) => {
+        if (!Utils.isValidRUC(ruc)) {
+          return { success: false, message: 'RUC debe tener 11 dígitos.' };
+        }
+        if (!razon.trim()) {
+          return { success: false, message: 'Ingrese la razón social.' };
+        }
+        if (proveedores.some(p => p.ruc === ruc)) {
+          return { success: false, message: 'Ese RUC ya está registrado.' };
+        }
+        
+        proveedores.push({ ruc, razon: razon.trim() });
+        await ProveedoresManager.guardar();
+        return { success: true, message: 'Proveedor agregado correctamente.' };
+      },
+
+      eliminar: async (ruc) => {
+        proveedores = proveedores.filter(p => p.ruc !== ruc);
+        await ProveedoresManager.guardar();
+        renderProveedoresList();
+      },
+
+      editar: async (ruc, nuevaRazon) => {
+        const proveedor = proveedores.find(p => p.ruc === ruc);
+        if (!proveedor) {
+          return { success: false, message: 'Proveedor no encontrado.' };
+        }
+        if (!nuevaRazon.trim()) {
+          return { success: false, message: 'La razón social no puede estar vacía.' };
+        }
+        
+        const razonAnterior = proveedor.razon;
+        proveedor.razon = nuevaRazon.trim();
+        
+        // Actualizar también en los registros actuales (tabla activa)
+        registros.forEach(reg => {
+          if (reg.proveedorId === ruc) {
+            reg.proveedor = `${ruc} - ${nuevaRazon.trim()}`;
+          }
+        });
+
+        // Actualizar en registros guardados
+        registrosGuardados.forEach(registro => {
+          registro.datos.forEach(dato => {
+            if (dato.proveedorId === ruc) {
+              dato.proveedor = `${ruc} - ${nuevaRazon.trim()}`;
+            }
+          });
+        });
+        await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+        
+        await ProveedoresManager.guardar();
+        return { success: true, message: 'Proveedor actualizado correctamente.' };
+      },
+
+      buscar: (query) => {
+        if (!query) return proveedores;
+        const normalized = Utils.normalizeText(query);
+        return proveedores.filter(p =>
+          p.ruc.includes(query) ||
+          Utils.normalizeText(p.razon).includes(normalized)
+        );
+      },
+
+      importarCSV: (content) => {
+        const rows = content.trim().split(/\r?\n/);
+        const parsed = [];
+        for (let row of rows) {
+          let [ruc, ...razonArr] = row.split(",");
+          ruc = ruc.trim();
+          let razon = razonArr.join(",").trim();
+          if (Utils.isValidRUC(ruc) && razon) {
+            // Evitar duplicados
+            if (!proveedores.some(p => p.ruc === ruc)) {
+              parsed.push({ ruc, razon });
+            }
+          }
+        }
+        return parsed;
+      },
+
+      importarExcel: (json) => {
+        const parsed = [];
+        for (let row of json) {
+          if (!row[0]) continue;
+          let ruc = String(row[0]).trim();
+          let razon = row.slice(1).join(',').trim();
+          if (Utils.isValidRUC(ruc) && razon) {
+            if (!proveedores.some(p => p.ruc === ruc)) {
+              parsed.push({ ruc, razon });
+            }
+          }
+        }
+        return parsed;
+      }
+    };
+
+    // ========================================
+    // GESTIÓN DE REGISTROS
+    // ========================================
+    const RegistrosManager = {
+      cargar: async () => {
+        const data = await Storage.load(APP_CONFIG.STORAGE_KEYS.REGISTROS);
+        registrosGuardados = data || [];
+        UI.updateStats();
+      },
+
+      guardar: async (mes, anio, datos) => {
+        const registro = {
+          id: Utils.generateId(),
+          numeroDocumento: Utils.generateDocNumber(),
+          fecha: new Date().toISOString(),
+          periodo: { mes, anio },
+          datos: datos.filter(d => d.dia || d.proveedor) // Solo guardar filas con datos
+        };
+        
+        registrosGuardados.unshift(registro); // Agregar al inicio
+        const guardadoExitoso = await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+        
+        if (!guardadoExitoso) {
+          // Revertir el cambio si falló el guardado
+          registrosGuardados.shift();
+          return { success: false, error: 'Espacio de almacenamiento lleno' };
+        }
+        
+        UI.updateStats();
+        return { success: true, registro: registro };
+      },
+
+      actualizar: async (id, mes, anio, datos) => {
+        const index = registrosGuardados.findIndex(r => r.id === id);
+        if (index === -1) {
+          return { success: false, message: 'Registro no encontrado.' };
+        }
+        
+        const registroOriginal = { ...registrosGuardados[index] };
+        
+        registrosGuardados[index] = {
+          ...registrosGuardados[index],
+          fechaModificacion: new Date().toISOString(),
+          periodo: { mes, anio },
+          datos: datos.filter(d => d.dia || d.proveedor)
+        };
+        
+        const guardadoExitoso = await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+        
+        if (!guardadoExitoso) {
+          // Revertir el cambio si falló el guardado
+          registrosGuardados[index] = registroOriginal;
+          return { success: false, message: 'Error: Espacio de almacenamiento lleno. No se pudo actualizar.' };
+        }
+        
+        return { success: true, message: 'Registro actualizado correctamente.' };
+      },
+
+      eliminar: async (id) => {
+        registrosGuardados = registrosGuardados.filter(r => r.id !== id);
+        await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+        UI.updateStats();
+        renderHistorial();
+      },
+
+      exportarExcel: (registro) => {
+        // Agregar información del documento al inicio
+        const numeroDoc = registro.numeroDocumento || 'N/A';
+        const fechaCreacion = new Date(registro.fecha).toLocaleString('es-PE');
+        const nombreMesPeriodo = [
+          "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ][parseInt(registro.periodo.mes) - 1];
+        
+        // Crear hoja con información del documento
+        const infoDocumento = [
+          { 'Campo': 'Número de Documento', 'Valor': numeroDoc },
+          { 'Campo': 'Periodo', 'Valor': `${nombreMesPeriodo} ${registro.periodo.anio}` },
+          { 'Campo': 'Fecha de Creación', 'Valor': fechaCreacion },
+          { 'Campo': '', 'Valor': '' } // Fila vacía para separar
+        ];
+        
+        const exportData = registro.datos.map(reg => ({
+          Fecha: Utils.formatDate(reg.dia, registro.periodo.mes, registro.periodo.anio),
+          'Tipo de Documento': reg.tipoDoc,
+          'Serie y Nro': reg.serieNro,
+          Proveedor: reg.proveedor,
+          Concepto: reg.concepto,
+          'Importe Dólares': reg.impDol || '',
+          'Importe Soles': reg.impSol || ''
+        }));
+
+        // Combinar información del documento con los datos
+        const datosCompletos = [...infoDocumento, ...exportData.map((item, index) => {
+          if (index === 0) {
+            return { 'Campo': 'Fecha', 'Valor': item.Fecha, ...item };
+          }
+          return item;
+        })];
+
+        // Obtener la fecha del registro (usar fecha de modificación si existe, sino la de creación)
+        const fechaRegistro = registro.fechaModificacion || registro.fecha;
+        const fecha = new Date(fechaRegistro);
+        
+        // Formatear fecha y hora: YYYYMMDD_HHmmss
+        const año = fecha.getFullYear();
+        const mes = String(fecha.getMonth() + 1).padStart(2, '0');
+        const dia = String(fecha.getDate()).padStart(2, '0');
+        const horas = String(fecha.getHours()).padStart(2, '0');
+        const minutos = String(fecha.getMinutes()).padStart(2, '0');
+        const segundos = String(fecha.getSeconds()).padStart(2, '0');
+        const fechaHoraFormato = `${año}${mes}${dia}_${horas}${minutos}${segundos}`;
+
+        // Crear dos hojas: una con info y otra con los datos
+        const wb = XLSX.utils.book_new();
+        
+        // Hoja de información
+        const wsInfo = XLSX.utils.json_to_sheet(infoDocumento);
+        XLSX.utils.book_append_sheet(wb, wsInfo, 'Información');
+        
+        // Hoja de registros
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(wb, ws, 'Registros');
+        
+        // Nombre del archivo: Liquidacion_MesAño_NumDoc.xlsx
+        const nombreArchivo = `Liquidacion_${nombreMesPeriodo}${registro.periodo.anio}_${numeroDoc}.xlsx`;
+        XLSX.writeFile(wb, nombreArchivo);
+      }
+    };
+
+    // ========================================
+    // RENDERIZADO DE COMPONENTES
+    // ========================================
+    function initRegistrosVacios() {
+      registros = Array.from({ length: APP_CONFIG.NUM_FILAS_INICIAL }, () => ({
+        dia: '', 
+        tipoDoc: 'FACTURA', 
+        serieNro: '', 
+        proveedor: '', 
+        proveedorId: '', 
+        concepto: '', 
+        impDol: '', 
+        impSol: ''
+      }));
+    }
+
+    function renderTabla() {
+      const container = document.getElementById('rowsContainer');
+      const mes = document.getElementById('selectMes').value;
+      const anio = document.getElementById('selectAnio').value;
+      const mesNombre = meses[parseInt(mes) - 1];
+      
+      container.innerHTML = registros.map((reg, i) => `
+        <tr class="hover:bg-gray-50 transition ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}">
+          <td class="border border-gray-200 p-1.5">
+            <input type="number" min="1" max="31" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-16 text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              placeholder="Día"
+              value="${reg.dia || ''}" 
+              onchange="updateReg(${i}, 'dia', this.value)" />
+            <div class="text-[10px] text-gray-500 mt-0.5">${mesNombre} ${anio}</div>
+          </td>
+          <td class="border border-gray-200 p-1.5">
+            <select class="border-2 border-gray-300 p-1.5 rounded-lg w-full text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              onchange="updateReg(${i}, 'tipoDoc', this.value)">
+              ${APP_CONFIG.TIPOS_DOCUMENTO.map(op => 
+                `<option ${reg.tipoDoc === op ? "selected" : ""}>${op}</option>`
+              ).join("")}
+            </select>
+          </td>
+          <td class="border border-gray-200 p-1.5">
+            <input type="text" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-full text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              maxlength="20" 
+              placeholder="Serie-Nro" 
+              value="${reg.serieNro || ''}" 
+              onchange="updateReg(${i}, 'serieNro', this.value)"
+              id="serieNro${i}"
+              ${reg.tipoDoc === 'SIN DOCUMENTO' ? 'disabled' : ''}>
+          </td>
+          <td class="border border-gray-200 p-1.5 relative" style="min-width:200px;">
+            <input type="text" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-full text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+              oninput="showProviderSuggest(${i}, this.value)" 
+              value="${reg.proveedor || ''}" 
+              placeholder="🔍 RUC o Razón Social" 
+              autocomplete="off" 
+              id="provinput${i}"
+              ${reg.tipoDoc === 'SIN DOCUMENTO' ? 'disabled' : ''} />
+            <input type="hidden" id="provId${i}" value="${reg.proveedorId || ''}">
+            <div id="suggest${i}" class="suggest-list hidden"></div>
+          </td>
+          <td class="border border-gray-200 p-1.5">
+            <input type="text" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-full text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              maxlength="60" 
+              placeholder="Concepto" 
+              value="${reg.concepto || ''}" 
+              onchange="updateReg(${i}, 'concepto', this.value)">
+          </td>
+          <td class="border border-gray-200 p-1.5">
+            <input type="number" min="0" step="0.01" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-24 text-xs text-right focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              placeholder="$" 
+              value="${reg.impDol || ''}" 
+              onchange="updateReg(${i}, 'impDol', this.value)">
+          </td>
+          <td class="border border-gray-200 p-1.5">
+            <input type="number" min="0" step="0.01" 
+              class="border-2 border-gray-300 p-1.5 rounded-lg w-24 text-xs text-right focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition" 
+              placeholder="S/" 
+              value="${reg.impSol || ''}" 
+              onchange="updateReg(${i}, 'impSol', this.value)">
+          </td>
+          <td class="border border-gray-200 p-1.5 text-center">
+            <button type="button" 
+              class="text-red-600 hover:text-red-900 hover:bg-red-100 p-1.5 rounded-lg transition" 
+              onclick="clearRow(${i})"
+              title="Limpiar fila">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function renderHistorial() {
+      const container = document.getElementById('historialContainer');
+      
+      if (registrosGuardados.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-10">
+            <span class="text-5xl">📭</span>
+            <p class="text-lg text-gray-600 mt-3">No hay registros guardados</p>
+            <p class="text-sm text-gray-500 mt-1.5">Crea tu primera liquidación de gastos</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = registrosGuardados.map(registro => {
+        const mesNombre = meses[parseInt(registro.periodo.mes) - 1];
+        const totalSoles = registro.datos.reduce((sum, d) => sum + (parseFloat(d.impSol) || 0), 0);
+        const totalDolares = registro.datos.reduce((sum, d) => sum + (parseFloat(d.impDol) || 0), 0);
+        const fechaGuardado = new Date(registro.fecha).toLocaleString('es-PE');
+        const fechaModificacion = registro.fechaModificacion ? new Date(registro.fechaModificacion).toLocaleString('es-PE') : null;
+        const numeroDoc = registro.numeroDocumento || 'N/A';
+
+        return `
+          <div class="border-2 border-gray-200 rounded-xl p-4 hover:shadow-lg transition">
+            <div class="flex justify-between items-start mb-3 flex-wrap gap-2.5">
+              <div>
+                <h3 class="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <span>📅</span>
+                  ${mesNombre} ${registro.periodo.anio}
+                  ${fechaModificacion ? '<span class="badge bg-orange-100 text-orange-700 text-xs ml-2">✏️ Editado</span>' : ''}
+                </h3>
+                <p class="text-xs font-semibold text-indigo-600 mt-1">📄 Documento: ${numeroDoc}</p>
+                <p class="text-xs text-gray-500 mt-1">Creado: ${fechaGuardado}</p>
+                ${fechaModificacion ? `<p class="text-xs text-orange-600 mt-0.5">Última modificación: ${fechaModificacion}</p>` : ''}
+                <div class="flex gap-2 mt-1.5">
+                  <span class="badge bg-blue-100 text-blue-700 text-xs">
+                    ${registro.datos.length} registro(s)
+                  </span>
+                  <span class="badge bg-green-100 text-green-700 text-xs">
+                    S/ ${totalSoles.toFixed(2)}
+                  </span>
+                  ${totalDolares > 0 ? `<span class="badge bg-purple-100 text-purple-700 text-xs">$ ${totalDolares.toFixed(2)}</span>` : ''}
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="editarRegistro('${registro.id}')" 
+                  class="px-3.5 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-xs font-semibold flex items-center gap-1.5"
+                  title="Editar este registro">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                  </svg>
+                  Editar
+                </button>
+                <button onclick="exportRegistro('${registro.id}')" 
+                  class="px-3.5 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-xs font-semibold flex items-center gap-1.5"
+                  title="Exportar a Excel con fecha: ${fechaModificacion || fechaGuardado}">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                  </svg>
+                  Excel
+                </button>
+                <button onclick="eliminarRegistro('${registro.id}')" 
+                  class="px-3.5 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-xs font-semibold flex items-center gap-1.5"
+                  title="Eliminar este registro">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                  </svg>
+                  Eliminar
+                </button>
+              </div>
+            </div>
+            
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="bg-gray-100">
+                    <th class="py-2 px-2.5 text-left font-semibold">Fecha</th>
+                    <th class="py-2 px-2.5 text-left font-semibold">Tipo</th>
+                    <th class="py-2 px-2.5 text-left font-semibold">Serie-Nro</th>
+                    <th class="py-2 px-2.5 text-left font-semibold">Proveedor</th>
+                    <th class="py-2 px-2.5 text-left font-semibold">Concepto</th>
+                    <th class="py-2 px-2.5 text-right font-semibold">Dólares</th>
+                    <th class="py-2 px-2.5 text-right font-semibold">Soles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${registro.datos.map(d => `
+                    <tr class="border-t">
+                      <td class="py-1.5 px-2.5">${Utils.formatDate(d.dia, registro.periodo.mes, registro.periodo.anio)}</td>
+                      <td class="py-1.5 px-2.5">${d.tipoDoc}</td>
+                      <td class="py-1.5 px-2.5">${d.serieNro}</td>
+                      <td class="py-1.5 px-2.5 text-xs">${d.proveedor}</td>
+                      <td class="py-1.5 px-2.5">${d.concepto}</td>
+                      <td class="py-1.5 px-2.5 text-right">${d.impDol ? '$' + parseFloat(d.impDol).toFixed(2) : '-'}</td>
+                      <td class="py-1.5 px-2.5 text-right">S/ ${parseFloat(d.impSol).toFixed(2)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderProveedoresList(filtro = '') {
+      const container = document.getElementById('proveedoresList');
+      const lista = filtro ? ProveedoresManager.buscar(filtro) : proveedores;
+
+      if (lista.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-6 text-gray-500">
+            <span class="text-3xl">🔍</span>
+            <p class="mt-2 text-sm">${filtro ? 'No se encontraron proveedores' : 'No hay proveedores registrados'}</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = lista.map(p => `
+        <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+          <div class="flex-1">
+            <p class="font-semibold text-gray-800 text-sm">${p.razon}</p>
+            <p class="text-xs text-gray-600">RUC: ${p.ruc}</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="abrirEditarProveedor('${p.ruc}', '${p.razon.replace(/'/g, "\\'")}')" 
+              class="px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition text-xs font-semibold flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+              </svg>
+              Editar
+            </button>
+            <button onclick="eliminarProveedor('${p.ruc}')" 
+              class="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-xs font-semibold flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+              Eliminar
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ========================================
+    // FUNCIONES GLOBALES (llamadas desde HTML)
+    // ========================================
+    window.updateReg = (i, key, val) => {
+      registros[i][key] = val;
+      // Si el tipo de documento cambia a 'SIN DOCUMENTO', limpiar y deshabilitar los campos
+      if (key === 'tipoDoc') {
+        if (val === 'SIN DOCUMENTO') {
+          registros[i].serieNro = '';
+          registros[i].proveedor = '';
+          registros[i].proveedorId = '';
+        }
+        renderTabla();
+      }
+    };
+
+    window.clearRow = (i) => {
+      registros[i] = {
+        dia: '', 
+        tipoDoc: 'FACTURA', 
+        serieNro: '', 
+        proveedor: '', 
+        proveedorId: '', 
+        concepto: '', 
+        impDol: '', 
+        impSol: ''
+      };
+      renderTabla();
+    };
+
+    window.showProviderSuggest = (i, inputVal) => {
+      inputVal = inputVal.trim();
+      const suggestBox = document.getElementById(`suggest${i}`);
+      
+      if (!inputVal || proveedores.length === 0) {
+        suggestBox.classList.add('hidden');
+        return;
+      }
+
+      const lista = ProveedoresManager.buscar(inputVal);
+      
+      if (lista.length === 0) {
+        suggestBox.classList.add('hidden');
+        return;
+      }
+
+      // Autoseleccionar si es RUC exacto
+      if (lista.length === 1 && lista[0].ruc === inputVal) {
+        registros[i].proveedor = `${lista[0].ruc} - ${lista[0].razon}`;
+        registros[i].proveedorId = lista[0].ruc;
+        renderTabla();
+        return;
+      }
+
+      suggestBox.innerHTML = lista.slice(0, 7).map(p =>
+        `<div onclick="selectProvider(${i}, '${p.ruc}', '${p.razon.replace(/'/g, "\\'")}')">${p.ruc} - ${p.razon}</div>`
+      ).join('');
+      suggestBox.classList.remove('hidden');
+    };
+
+    window.selectProvider = (i, ruc, razon) => {
+      registros[i].proveedor = `${ruc} - ${razon}`;
+      registros[i].proveedorId = ruc;
+      renderTabla();
+    };
+
+    window.closeModal = () => {
+      document.getElementById('modalProvider').classList.add('hidden');
+    };
+
+    window.addProvider = async () => {
+      const ruc = document.getElementById('inputRUC').value.trim();
+      const razon = document.getElementById('inputRazon').value.trim();
+      const result = await ProveedoresManager.agregar(ruc, razon);
+      
+      if (result.success) {
+        closeModal();
+        const msgEl = document.getElementById('providerUploadMsg');
+        msgEl.innerHTML = `
+          <div class="bg-green-100 border-2 border-green-500 rounded-xl p-3 shadow-lg inline-block">
+            <div class="flex items-center gap-2 text-green-800 font-semibold text-sm">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span>${result.message}</span>
+            </div>
+          </div>
+        `;
+        setTimeout(() => msgEl.innerHTML = '', 3000);
+        renderTabla();
+        renderProveedoresList();
+      } else {
+        document.getElementById('providerErr').textContent = result.message;
+      }
+    };
+
+    window.eliminarProveedor = async (ruc) => {
+      if (confirm('¿Está seguro de eliminar este proveedor?')) {
+        await ProveedoresManager.eliminar(ruc);
+        UI.showMessage('Proveedor eliminado correctamente', 'success');
+      }
+    };
+
+    window.abrirEditarProveedor = (ruc, razon) => {
+      document.getElementById('modalEditProvider').classList.remove('hidden');
+      document.getElementById('editRUC').value = ruc;
+      document.getElementById('editRazon').value = razon;
+      document.getElementById('editProviderErr').textContent = '';
+    };
+
+    window.closeEditModal = () => {
+      document.getElementById('modalEditProvider').classList.add('hidden');
+    };
+
+    window.updateProvider = async () => {
+      const ruc = document.getElementById('editRUC').value.trim();
+      const razon = document.getElementById('editRazon').value.trim();
+      const result = await ProveedoresManager.editar(ruc, razon);
+      
+      if (result.success) {
+        closeEditModal();
+        UI.showSuccessNotification(result.message);
+        renderProveedoresList();
+        renderTabla(); // Actualizar la tabla si hay proveedores seleccionados
+      } else {
+        document.getElementById('editProviderErr').textContent = result.message;
+      }
+    };
+
+    window.exportRegistro = (id) => {
+      const registro = registrosGuardados.find(r => r.id === id);
+      if (registro) {
+        RegistrosManager.exportarExcel(registro);
+      }
+    };
+
+    window.editarRegistro = (id) => {
+      const registro = registrosGuardados.find(r => r.id === id);
+      if (!registro) {
+        UI.showMessage('Registro no encontrado', 'error');
+        return;
+      }
+
+      // Guardar el ID del registro que estamos editando
+      registroEnEdicion = id;
+
+      // Cargar los datos del registro en el formulario
+      document.getElementById('selectMes').value = registro.periodo.mes;
+      document.getElementById('selectAnio').value = registro.periodo.anio;
+
+      // Cargar los datos en la tabla
+      registros = [...registro.datos];
+      
+      // Si hay menos de 10 filas, rellenar con filas vacías
+      while (registros.length < APP_CONFIG.NUM_FILAS_INICIAL) {
+        registros.push({
+          dia: '', 
+          tipoDoc: 'FACTURA', 
+          serieNro: '', 
+          proveedor: '', 
+          proveedorId: '', 
+          concepto: '', 
+          impDol: '', 
+          impSol: ''
+        });
+      }
+
+      // Cambiar a la sección de nuevo registro
+      UI.showSection('nuevo');
+      
+      // Renderizar la tabla con los datos
+      renderTabla();
+
+      // Cambiar el texto del botón de guardar
+      const btnGuardar = document.querySelector('#registerForm button[type="submit"]');
+      const iconoOriginal = btnGuardar.innerHTML;
+      btnGuardar.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+        Actualizar Registro
+      `;
+      
+      // Agregar botón de cancelar edición
+      if (!document.getElementById('btnCancelarEdicion')) {
+        const btnCancelar = document.createElement('button');
+        btnCancelar.type = 'button';
+        btnCancelar.id = 'btnCancelarEdicion';
+        btnCancelar.className = 'flex-1 min-w-[200px] py-2.5 px-5 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition shadow-lg hover:shadow-xl flex items-center justify-center gap-2 text-sm';
+        btnCancelar.innerHTML = `
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          Cancelar Edición
+        `;
+        btnCancelar.onclick = cancelarEdicion;
+        btnGuardar.parentElement.insertBefore(btnCancelar, btnGuardar);
+      }
+
+      UI.showMessage('Editando registro. Modifica los datos y haz clic en "Actualizar Registro"', 'info');
+      
+      // Scroll hacia arriba
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.cancelarEdicion = () => {
+      registroEnEdicion = null;
+      initRegistrosVacios();
+      renderTabla();
+      
+      // Restaurar botón de guardar
+      const btnGuardar = document.querySelector('#registerForm button[type="submit"]');
+      btnGuardar.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+        </svg>
+        Guardar Registro
+      `;
+      
+      // Eliminar botón de cancelar
+      const btnCancelar = document.getElementById('btnCancelarEdicion');
+      if (btnCancelar) {
+        btnCancelar.remove();
+      }
+      
+      UI.showMessage('Edición cancelada', 'info');
+    };
+
+    window.eliminarRegistro = async (id) => {
+      if (confirm('¿Está seguro de eliminar este registro? Esta acción no se puede deshacer.')) {
+        await RegistrosManager.eliminar(id);
+        UI.showMessage('Registro eliminado correctamente', 'success');
+      }
+    };
+
+    window.mostrarGestionAlmacenamiento = async () => {
+      const stats = await Utils.getStorageStats();
+      const detailsDiv = document.getElementById('storageDetails');
+      
+      let alertClass = 'bg-green-50 border-green-500 text-green-800';
+      let alertIcon = '✅';
+      let alertMsg = 'El almacenamiento está en buen estado.';
+      
+      if (parseFloat(stats.percentUsed) > 90) {
+        alertClass = 'bg-red-50 border-red-500 text-red-800';
+        alertIcon = '🚨';
+        alertMsg = 'El almacenamiento está casi lleno. Elimina registros antiguos para liberar espacio.';
+      } else if (parseFloat(stats.percentUsed) > 70) {
+        alertClass = 'bg-orange-50 border-orange-500 text-orange-800';
+        alertIcon = '⚠️';
+        alertMsg = 'El almacenamiento está alcanzando su límite.';
+      }
+      
+      detailsDiv.innerHTML = `
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <div class="bg-blue-50 p-3 rounded-lg">
+            <p class="text-xs text-blue-600 font-semibold">Espacio Usado</p>
+            <p class="text-2xl font-bold text-blue-700">${stats.totalMB} MB</p>
+            <p class="text-[10px] text-blue-500 mt-1">Comprimido</p>
+          </div>
+          <div class="bg-purple-50 p-3 rounded-lg">
+            <p class="text-xs text-purple-600 font-semibold">Porcentaje</p>
+            <p class="text-2xl font-bold text-purple-700">${stats.percentUsed}%</p>
+          </div>
+        </div>
+        
+        ${stats.compressionRatio > 0 ? `
+        <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-green-600 text-sm">🗜️ Compresión Activa</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs text-green-700">
+            <div>
+              <span class="font-semibold">Sin comprimir:</span> ${stats.uncompressedMB} MB
+            </div>
+            <div>
+              <span class="font-semibold">Ahorro:</span> ${stats.compressionRatio}%
+            </div>
+          </div>
+        </div>
+        ` : ''}
+        
+        <div class="bg-gray-100 rounded-lg p-3 mb-3">
+          <div class="flex justify-between text-xs mb-1.5">
+            <span class="font-semibold">Progreso de uso (IndexedDB)</span>
+            <span>${stats.totalMB} MB de ${stats.quotaMB} MB</span>
+          </div>
+          <div class="w-full bg-gray-300 rounded-full h-3">
+            <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-3 rounded-full transition-all" style="width: ${Math.min(parseFloat(stats.percentUsed), 100)}%"></div>
+          </div>
+        </div>
+        
+        <div class="${alertClass} border-l-4 p-3 rounded text-sm">
+          <strong>${alertIcon}</strong> ${alertMsg}
+        </div>
+        
+        <div class="mt-4 text-sm text-gray-600">
+          <p><strong>Total de registros guardados:</strong> ${registrosGuardados.length}</p>
+          <p><strong>Total de proveedores:</strong> ${proveedores.length}</p>
+        </div>
+      `;
+      
+      document.getElementById('modalStorage').classList.remove('hidden');
+    };
+
+    window.closeStorageModal = () => {
+      document.getElementById('modalStorage').classList.add('hidden');
+    };
+
+    window.eliminarRegistrosAntiguos = async () => {
+      if (registrosGuardados.length === 0) {
+        alert('No hay registros para eliminar.');
+        return;
+      }
+      
+      const cantidad = prompt(`¿Cuántos registros antiguos deseas eliminar?\n(Total actual: ${registrosGuardados.length} registros)`);
+      
+      if (!cantidad || isNaN(cantidad) || cantidad <= 0) {
+        return;
+      }
+      
+      const num = parseInt(cantidad);
+      if (num > registrosGuardados.length) {
+        alert('No hay suficientes registros para eliminar esa cantidad.');
+        return;
+      }
+      
+      if (!confirm(`¿Estás seguro de eliminar los ${num} registros MÁS ANTIGUOS?\n\n⚠️ Esta acción NO se puede deshacer.\n✅ Asegúrate de haber exportado los registros importantes antes de continuar.`)) {
+        return;
+      }
+      
+      // Eliminar los últimos N registros (los más antiguos están al final)
+      registrosGuardados.splice(-num, num);
+      await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+      UI.updateStats();
+      renderHistorial();
+      
+      closeStorageModal();
+      UI.showSuccessNotification(`${num} registros antiguos eliminados exitosamente.`);
+      
+      // Actualizar estadísticas
+      setTimeout(async () => {
+        await mostrarGestionAlmacenamiento();
+      }, 500);
+    };
+
+    // ========================================
+    // INICIALIZACIÓN DE PERIODO
+    // ========================================
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+
+    function initPeriodo() {
+      const selMes = document.getElementById('selectMes');
+      const selAnio = document.getElementById('selectAnio');
+      
+      selMes.innerHTML = meses.map((m, i) => 
+        `<option value="${i + 1}">${m}</option>`
+      ).join('');
+      
+      const anioActual = new Date().getFullYear();
+      selAnio.innerHTML = [anioActual - 1, anioActual, anioActual + 1].map(anio => 
+        `<option value="${anio}">${anio}</option>`
+      ).join('');
+      
+      selMes.value = new Date().getMonth() + 1;
+      selAnio.value = anioActual;
+    }
+
+    // ========================================
+    // EVENTOS DE ARCHIVO
+    // ========================================
+    document.getElementById('fileInput').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const ext = file.name.split('.').pop().toLowerCase();
+      const msgEl = document.getElementById('providerUploadMsg');
+
+      if (ext === 'csv') {
+        const reader = new FileReader();
+        reader.onload = async evt => {
+          const nuevos = ProveedoresManager.importarCSV(evt.target.result);
+          if (nuevos.length > 0) {
+            proveedores.push(...nuevos);
+            await ProveedoresManager.guardar();
+            msgEl.textContent = `¡${nuevos.length} proveedores cargados correctamente!`;
+            msgEl.className = 'text-sm font-medium mt-3 text-green-600';
+            renderTabla();
+            renderProveedoresList();
+          } else {
+            msgEl.textContent = 'Archivo inválido o sin datos válidos.';
+            msgEl.className = 'text-sm font-medium mt-3 text-red-600';
+          }
+        };
+        reader.readAsText(file, 'utf-8');
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const reader = new FileReader();
+        reader.onload = async evt => {
+          const data = new Uint8Array(evt.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const json = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+          
+          const nuevos = ProveedoresManager.importarExcel(json);
+          if (nuevos.length > 0) {
+            proveedores.push(...nuevos);
+            await ProveedoresManager.guardar();
+            msgEl.textContent = `¡${nuevos.length} proveedores cargados correctamente!`;
+            msgEl.className = 'text-sm font-medium mt-3 text-green-600';
+            renderTabla();
+            renderProveedoresList();
+          } else {
+            msgEl.textContent = 'Archivo Excel inválido o sin datos válidos.';
+            msgEl.className = 'text-sm font-medium mt-3 text-red-600';
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        msgEl.textContent = 'Formato no soportado. Use CSV o Excel.';
+        msgEl.className = 'text-sm font-medium mt-3 text-red-600';
+      }
+    });
+
+    // ========================================
+    // EVENTOS DE BOTONES
+    // ========================================
+    document.getElementById('btnAddProvider').onclick = () => {
+      document.getElementById('modalProvider').classList.remove('hidden');
+      document.getElementById('inputRUC').value = '';
+      document.getElementById('inputRazon').value = '';
+      document.getElementById('providerErr').textContent = '';
+    };
+
+    document.getElementById('registerForm').onsubmit = async function(e) {
+      e.preventDefault();
+      
+      const mes = document.getElementById('selectMes').value;
+      const anio = document.getElementById('selectAnio').value;
+      
+      // Filtrar solo filas con datos
+      const datosValidos = registros.filter(reg => 
+        reg.dia || reg.proveedor || reg.concepto || reg.impSol
+      );
+
+      if (datosValidos.length === 0) {
+        UI.showMessage('No hay datos para guardar.', 'error');
+        return;
+      }
+
+      // Validar cada fila con datos
+      for (let reg of datosValidos) {
+        // Si el tipo de documento es 'SIN DOCUMENTO', no exigir serie/nro ni proveedor
+        if (reg.tipoDoc === 'SIN DOCUMENTO') {
+          if (!reg.dia || !reg.tipoDoc || !reg.concepto) {
+            UI.showMessage('Completa todos los campos obligatorios en cada fila con datos.', 'error');
+            return;
+          }
+        } else {
+          if (!reg.dia || !reg.tipoDoc || !reg.serieNro || !reg.proveedorId || !reg.concepto) {
+            UI.showMessage('Completa todos los campos obligatorios en cada fila con datos.', 'error');
+            return;
+          }
+        }
+
+        // Validar día válido
+        const dia = parseInt(reg.dia, 10);
+        const fechaPrueba = new Date(anio, mes - 1, dia);
+        if (fechaPrueba.getMonth() + 1 !== parseInt(mes) || fechaPrueba.getDate() !== dia) {
+          UI.showMessage(`El día ${dia} no es válido para el mes/año seleccionados.`, 'error');
+          return;
+        }
+
+        // Validar importe en soles
+        if (!(parseFloat(reg.impSol) || 0)) {
+          UI.showMessage('Debes ingresar un importe en soles en cada registro.', 'error');
+          return;
+        }
+      }
+
+      // Verificar si estamos editando o creando nuevo
+      if (registroEnEdicion) {
+        // Actualizar registro existente
+        const result = await RegistrosManager.actualizar(registroEnEdicion, mes, anio, datosValidos);
+        if (result.success) {
+          // Obtener el número de documento del registro actualizado
+          const registroActualizado = registrosGuardados.find(r => r.id === registroEnEdicion);
+          UI.showSuccessNotification('¡Registro actualizado exitosamente!', registroActualizado?.numeroDocumento);
+          
+          // Limpiar modo edición
+          registroEnEdicion = null;
+          
+          // Restaurar botón de guardar
+          const btnGuardar = document.querySelector('#registerForm button[type="submit"]');
+          btnGuardar.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+            </svg>
+            Guardar Registro
+          `;
+          
+          // Eliminar botón de cancelar
+          const btnCancelar = document.getElementById('btnCancelarEdicion');
+          if (btnCancelar) {
+            btnCancelar.remove();
+          }
+          
+          // Limpiar formulario
+          initRegistrosVacios();
+          renderTabla();
+          
+          // Actualizar historial si estamos en esa sección
+          if (currentSection === 'historial') {
+            renderHistorial();
+          }
+        } else {
+          UI.showMessage(result.message, 'error');
+        }
+      } else {
+        // Guardar nuevo registro
+        const resultado = await RegistrosManager.guardar(mes, anio, datosValidos);
+        
+        if (resultado.success) {
+          UI.showSuccessNotification('¡Registro guardado exitosamente!', resultado.registro.numeroDocumento);
+          
+          // Limpiar formulario
+          initRegistrosVacios();
+          renderTabla();
+        } else {
+          UI.showMessage(`❌ Error al guardar: ${resultado.error}. El almacenamiento local está lleno. Exporta y elimina registros antiguos para liberar espacio.`, 'error');
+        }
+      }
+    };
+
+    document.getElementById('btnExportExcel').onclick = function() {
+      const mes = document.getElementById('selectMes').value;
+      const anio = document.getElementById('selectAnio').value;
+      
+      const exportData = registros
+        .filter(reg => reg.dia || reg.proveedor)
+        .map(reg => ({
+          Fecha: reg.dia ? Utils.formatDate(reg.dia, mes, anio) : '',
+          'Tipo de Documento': reg.tipoDoc,
+          'Serie y Nro': reg.serieNro,
+          Proveedor: reg.proveedor,
+          Concepto: reg.concepto,
+          'Importe Dólares': reg.impDol || '',
+          'Importe Soles': reg.impSol || ''
+        }));
+
+      if (exportData.length === 0) {
+        UI.showMessage('No hay registros para exportar.', 'error');
+        return;
+      }
+
+      // Obtener fecha y hora actual para el nombre del archivo
+      const ahora = new Date();
+      const año = ahora.getFullYear();
+      const mesNum = String(ahora.getMonth() + 1).padStart(2, '0');
+      const dia = String(ahora.getDate()).padStart(2, '0');
+      const horas = String(ahora.getHours()).padStart(2, '0');
+      const minutos = String(ahora.getMinutes()).padStart(2, '0');
+      const segundos = String(ahora.getSeconds()).padStart(2, '0');
+      const fechaHoraFormato = `${año}${mesNum}${dia}_${horas}${minutos}${segundos}`;
+      
+      // Nombre del mes del periodo
+      const nombreMes = meses[parseInt(mes) - 1];
+
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Registros');
+      
+      // Nombre del archivo con fecha y hora de generación
+      const nombreArchivo = `Liquidacion_${nombreMes}${anio}_${fechaHoraFormato}.xlsx`;
+      XLSX.writeFile(wb, nombreArchivo);
+      
+      UI.showMessage('Excel exportado correctamente', 'success');
+    };
+
+    document.getElementById('selectMes').onchange = renderTabla;
+    document.getElementById('selectAnio').onchange = renderTabla;
+
+    // Búsqueda de proveedores
+    document.getElementById('searchProveedor').addEventListener('input', (e) => {
+      renderProveedoresList(e.target.value);
+    });
+
+    // Cerrar modales con tecla ESC
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeModal();
+        closeEditModal();
+      }
+    });
+
+    // ========================================
+    // INICIALIZACIÓN DE LA APP
+    // ========================================
+    async function init() {
+      // Cargar datos guardados
+      await ProveedoresManager.cargar();
+      await RegistrosManager.cargar();
+      
+      // Inicializar periodo
+      initPeriodo();
+      
+      // Inicializar registros vacíos
+      initRegistrosVacios();
+      
+      // Renderizar tabla inicial
+      renderTabla();
+      
+      // Actualizar estadísticas
+      await UI.updateStats();
+      
+      console.log('✅ Aplicación inicializada correctamente');
+      console.log(`📊 Proveedores cargados: ${proveedores.length}`);
+      console.log(`📋 Registros guardados: ${registrosGuardados.length}`);
+      console.log('💾 IndexedDB activado - Capacidad: 50 MB - 1 GB+');
+      console.log('🗜️ Compresión LZ-String activada');
+    }
+
+    // Ejecutar cuando el DOM esté listo
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  </script>
+</body>
+</html>
