@@ -233,6 +233,32 @@
           <h1 class="text-2xl font-bold text-gray-800">Gestión de Proveedores</h1>
         </div>
 
+        <!-- Backup y Restauración -->
+        <div class="mb-5 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border-2 border-purple-200">
+          <label class="block font-semibold mb-2.5 text-gray-700 flex items-center gap-2 text-sm">
+            <span class="text-lg">💾</span>
+            Backup y Restauración Completa
+          </label>
+          <div class="grid grid-cols-2 gap-3">
+            <button onclick="exportarBackupCompleto()" class="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-indigo-700 transition shadow-lg flex items-center justify-center gap-2 text-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+              Exportar Todo
+            </button>
+            <button onclick="document.getElementById('fileInputBackup').click()" class="px-4 py-2.5 bg-gradient-to-r from-green-600 to-teal-600 text-white font-semibold rounded-lg hover:from-green-700 hover:to-teal-700 transition shadow-lg flex items-center justify-center gap-2 text-sm">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+              </svg>
+              Importar Todo
+            </button>
+          </div>
+          <input type="file" id="fileInputBackup" accept=".json" class="hidden" onchange="importarBackupCompleto(this)" />
+          <div class="mt-2 text-xs text-purple-700 bg-purple-100 p-2 rounded">
+            <strong>💡 Tip:</strong> Exporta tu backup para transferir datos a otro dispositivo o navegador.
+          </div>
+        </div>
+
         <!-- Carga de Proveedores -->
         <div class="mb-5 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border-2 border-blue-200">
           <label class="block font-semibold mb-2.5 text-gray-700 flex items-center gap-2 text-sm">
@@ -1498,6 +1524,130 @@
       setTimeout(async () => {
         await mostrarGestionAlmacenamiento();
       }, 500);
+    };
+
+    // ========================================
+    // EXPORTACIÓN E IMPORTACIÓN DE BACKUP
+    // ========================================
+    window.exportarBackupCompleto = () => {
+      try {
+        const backup = {
+          version: '1.0',
+          fecha: new Date().toISOString(),
+          app: 'Rendicion de Gastos',
+          datos: {
+            proveedores: proveedores,
+            registros: registrosGuardados
+          },
+          estadisticas: {
+            totalProveedores: proveedores.length,
+            totalRegistros: registrosGuardados.length
+          }
+        };
+
+        // Convertir a JSON
+        const jsonString = JSON.stringify(backup, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        
+        // Crear nombre de archivo con fecha
+        const ahora = new Date();
+        const fecha = `${ahora.getFullYear()}${String(ahora.getMonth() + 1).padStart(2, '0')}${String(ahora.getDate()).padStart(2, '0')}`;
+        const hora = `${String(ahora.getHours()).padStart(2, '0')}${String(ahora.getMinutes()).padStart(2, '0')}`;
+        const nombreArchivo = `Backup_RendicionGastos_${fecha}_${hora}.json`;
+        
+        // Descargar
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = nombreArchivo;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        UI.showSuccessNotification(`Backup exportado: ${nombreArchivo}`);
+        console.log(`✅ Backup exportado: ${proveedores.length} proveedores, ${registrosGuardados.length} registros`);
+      } catch (error) {
+        console.error('Error al exportar backup:', error);
+        UI.showMessage('Error al exportar backup: ' + error.message, 'error');
+      }
+    };
+
+    window.importarBackupCompleto = async (input) => {
+      const file = input.files[0];
+      if (!file) return;
+      
+      // Confirmar antes de importar
+      if (!confirm('⚠️ IMPORTANTE: Al importar un backup se REEMPLAZARÁN todos los datos actuales.\n\n¿Deseas continuar?\n\n💡 Recomendación: Exporta un backup de tus datos actuales antes de continuar.')) {
+        input.value = ''; // Limpiar input
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const backup = JSON.parse(e.target.result);
+          
+          // Validar estructura del backup
+          if (!backup.version || !backup.datos) {
+            throw new Error('Archivo de backup inválido o corrupto.');
+          }
+          
+          if (!backup.datos.proveedores || !backup.datos.registros) {
+            throw new Error('El backup no contiene los datos necesarios.');
+          }
+          
+          // Mostrar información del backup
+          const mensaje = `
+📦 Información del Backup:
+━━━━━━━━━━━━━━━━━━━━━━
+📅 Fecha: ${new Date(backup.fecha).toLocaleString('es-ES')}
+📊 Proveedores: ${backup.datos.proveedores.length}
+📋 Registros: ${backup.datos.registros.length}
+
+¿Confirmas la importación?
+          `;
+          
+          if (!confirm(mensaje)) {
+            input.value = '';
+            return;
+          }
+          
+          // Importar datos
+          proveedores = backup.datos.proveedores;
+          registrosGuardados = backup.datos.registros;
+          
+          // Guardar en IndexedDB
+          await ProveedoresManager.guardar();
+          await RegistrosManager.cargar(); // Recargar para actualizar la variable
+          registrosGuardados = backup.datos.registros;
+          await Storage.save(APP_CONFIG.STORAGE_KEYS.REGISTROS, registrosGuardados);
+          
+          // Actualizar UI
+          UI.updateStats();
+          renderTabla();
+          renderProveedoresList();
+          if (currentSection === 'historial') {
+            renderHistorial();
+          }
+          
+          UI.showSuccessNotification(`✅ Backup importado: ${backup.datos.proveedores.length} proveedores y ${backup.datos.registros.length} registros`);
+          console.log('✅ Backup importado exitosamente');
+          
+          input.value = ''; // Limpiar input
+        } catch (error) {
+          console.error('Error al importar backup:', error);
+          UI.showMessage('Error al importar backup: ' + error.message, 'error');
+          input.value = '';
+        }
+      };
+      
+      reader.onerror = () => {
+        UI.showMessage('Error al leer el archivo', 'error');
+        input.value = '';
+      };
+      
+      reader.readAsText(file);
     };
 
     // ========================================
